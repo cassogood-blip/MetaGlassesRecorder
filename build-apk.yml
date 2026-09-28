@@ -1,0 +1,47 @@
+name: Build Shiny LongCam APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Meta Wearables SDK sample
+        run: |
+          git clone --depth 1 https://github.com/facebook/meta-wearables-dat-android.git meta
+          cp -R meta/samples/CameraAccess appsrc
+
+      - name: Prepare Developer Mode build
+        working-directory: appsrc
+        run: |
+          printf 'mwdat_application_id=0\nmwdat_client_token=0\n' > local.properties
+          sed -i 's#<string name="app_name">.*</string>#<string name="app_name">Shiny LongCam</string>#' app/src/main/res/values/strings.xml
+          sed -i 's/private const val WAKELOCK_TIMEOUT_MS = 60L \* 60L \* 1000L/private const val WAKELOCK_TIMEOUT_MS = 6L * 60L * 60L * 1000L/' app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/stream/StreamingService.kt
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build APK
+        working-directory: appsrc
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: cp appsrc/app/build/outputs/apk/debug/app-debug.apk ShinyLongCam.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShinyLongCam-APK
+          path: ShinyLongCam.apk
+          if-no-files-found: error
