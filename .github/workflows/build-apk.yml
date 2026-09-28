@@ -24,82 +24,8 @@ jobs:
       - name: Make recordings persistent
         working-directory: appsrc
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/stream/VideoRecorder.kt")
-          s = p.read_text()
-          s = s.replace(
-              "import android.content.Context\n",
-              "import android.content.ContentValues\nimport android.content.Context\nimport android.provider.MediaStore\n",
-          )
-
-          old = '''      if (hadVideo && file != null && file.length() > 0L) {
-        try {
-          val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-          RecordingResult.Completed(uri)
-        } catch (e: Exception) {
-          Log.e(TAG, "Failed to expose recording uri: ${e.message}", e)
-          file.delete()
-          RecordingResult.Failed
-        }
-      } else {'''
-
-          new = '''      if (hadVideo && file != null && file.length() > 0L) {
-        try {
-          savePermanentCopy(file)
-          val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-          RecordingResult.Completed(uri)
-        } catch (e: Exception) {
-          Log.e(TAG, "Failed to finalize recording: ${e.message}", e)
-          file.delete()
-          RecordingResult.Failed
-        }
-      } else {'''
-
-          if old not in s:
-              raise SystemExit("Could not locate stopRecording block in Meta sample")
-          s = s.replace(old, new)
-
-          marker = "  private fun createTempFile(): File {"
-          helper = '''  private fun savePermanentCopy(source: File): Uri {
-    val resolver = context.contentResolver
-    val values =
-        ContentValues().apply {
-          put(
-              MediaStore.Video.Media.DISPLAY_NAME,
-              "ShinyLongCam_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.ROOT).format(java.util.Date())}.mp4",
-          )
-          put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-          put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/ShinyLongCam")
-          put(MediaStore.Video.Media.IS_PENDING, 1)
-        }
-
-    val uri =
-        resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-            ?: throw IllegalStateException("Could not create MediaStore entry")
-
-    try {
-      resolver.openOutputStream(uri, "w")?.use { output ->
-        source.inputStream().use { input -> input.copyTo(output) }
-      } ?: throw IllegalStateException("Could not open MediaStore output stream")
-
-      values.clear()
-      values.put(MediaStore.Video.Media.IS_PENDING, 0)
-      resolver.update(uri, values, null, null)
-      Log.i(TAG, "Saved permanent recording to $uri")
-      return uri
-    } catch (e: Exception) {
-      resolver.delete(uri, null, null)
-      throw e
-    }
-  }
-
-'''
-          if marker not in s:
-              raise SystemExit("Could not locate createTempFile in Meta sample")
-          s = s.replace(marker, helper + marker)
-          p.write_text(s)
-          PY
+          echo 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKcCA9IFBhdGgoImFwcC9zcmMvbWFpbi9qYXZhL2NvbS9tZXRhL3dlYXJhYmxlL2RhdC9leHRlcm5hbHNhbXBsZWFwcHMvY2FtZXJhYWNjZXNzL3N0cmVhbS9WaWRlb1JlY29yZGVyLmt0IikKcyA9IHAucmVhZF90ZXh0KCkKCnMgPSBzLnJlcGxhY2UoCiAgICAiaW1wb3J0IGFuZHJvaWQuY29udGVudC5Db250ZXh0XG4iLAogICAgImltcG9ydCBhbmRyb2lkLmNvbnRlbnQuQ29udGVudFZhbHVlc1xuaW1wb3J0IGFuZHJvaWQuY29udGVudC5Db250ZXh0XG5pbXBvcnQgYW5kcm9pZC5wcm92aWRlci5NZWRpYVN0b3JlXG4iLAopCgpvbGQgPSAiIiIgICAgICBpZiAoaGFkVmlkZW8gJiYgZmlsZSAhPSBudWxsICYmIGZpbGUubGVuZ3RoKCkgPiAwTCkgewogICAgICAgIHRyeSB7CiAgICAgICAgICB2YWwgdXJpID0gRmlsZVByb3ZpZGVyLmdldFVyaUZvckZpbGUoY29udGV4dCwgIiR7Y29udGV4dC5wYWNrYWdlTmFtZX0uZmlsZXByb3ZpZGVyIiwgZmlsZSkKICAgICAgICAgIFJlY29yZGluZ1Jlc3VsdC5Db21wbGV0ZWQodXJpKQogICAgICAgIH0gY2F0Y2ggKGU6IEV4Y2VwdGlvbikgewogICAgICAgICAgTG9nLmUoVEFHLCAiRmFpbGVkIHRvIGV4cG9zZSByZWNvcmRpbmcgdXJpOiAke2UubWVzc2FnZX0iLCBlKQogICAgICAgICAgZmlsZS5kZWxldGUoKQogICAgICAgICAgUmVjb3JkaW5nUmVzdWx0LkZhaWxlZAogICAgICAgIH0KICAgICAgfSBlbHNlIHsiIiIKCm5ldyA9ICIiIiAgICAgIGlmIChoYWRWaWRlbyAmJiBmaWxlICE9IG51bGwgJiYgZmlsZS5sZW5ndGgoKSA+IDBMKSB7CiAgICAgICAgdHJ5IHsKICAgICAgICAgIHNhdmVQZXJtYW5lbnRDb3B5KGZpbGUpCiAgICAgICAgICB2YWwgdXJpID0gRmlsZVByb3ZpZGVyLmdldFVyaUZvckZpbGUoY29udGV4dCwgIiR7Y29udGV4dC5wYWNrYWdlTmFtZX0uZmlsZXByb3ZpZGVyIiwgZmlsZSkKICAgICAgICAgIFJlY29yZGluZ1Jlc3VsdC5Db21wbGV0ZWQodXJpKQogICAgICAgIH0gY2F0Y2ggKGU6IEV4Y2VwdGlvbikgewogICAgICAgICAgTG9nLmUoVEFHLCAiRmFpbGVkIHRvIGZpbmFsaXplIHJlY29yZGluZzogJHtlLm1lc3NhZ2V9IiwgZSkKICAgICAgICAgIGZpbGUuZGVsZXRlKCkKICAgICAgICAgIFJlY29yZGluZ1Jlc3VsdC5GYWlsZWQKICAgICAgICB9CiAgICAgIH0gZWxzZSB7IiIiCgppZiBvbGQgbm90IGluIHM6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJDb3VsZCBub3QgbG9jYXRlIHN0b3BSZWNvcmRpbmcgYmxvY2sgaW4gTWV0YSBzYW1wbGUiKQpzID0gcy5yZXBsYWNlKG9sZCwgbmV3KQoKbWFya2VyID0gIiAgcHJpdmF0ZSBmdW4gY3JlYXRlVGVtcEZpbGUoKTogRmlsZSB7IgpoZWxwZXIgPSAiIiIgIHByaXZhdGUgZnVuIHNhdmVQZXJtYW5lbnRDb3B5KHNvdXJjZTogRmlsZSk6IFVyaSB7CiAgICB2YWwgcmVzb2x2ZXIgPSBjb250ZXh0LmNvbnRlbnRSZXNvbHZlcgogICAgdmFsIHZhbHVlcyA9CiAgICAgICAgQ29udGVudFZhbHVlcygpLmFwcGx5IHsKICAgICAgICAgIHB1dCgKICAgICAgICAgICAgICBNZWRpYVN0b3JlLlZpZGVvLk1lZGlhLkRJU1BMQVlfTkFNRSwKICAgICAgICAgICAgICAiU2hpbnlMb25nQ2FtXyR7amF2YS50ZXh0LlNpbXBsZURhdGVGb3JtYXQoInl5eXlNTWRkX0hIbW1zcyIsIGphdmEudXRpbC5Mb2NhbGUuUk9PVCkuZm9ybWF0KGphdmEudXRpbC5EYXRlKCkpfS5tcDQiLAogICAgICAgICAgKQogICAgICAgICAgcHV0KE1lZGlhU3RvcmUuVmlkZW8uTWVkaWEuTUlNRV9UWVBFLCAidmlkZW8vbXA0IikKICAgICAgICAgIHB1dChNZWRpYVN0b3JlLlZpZGVvLk1lZGlhLlJFTEFUSVZFX1BBVEgsICJNb3ZpZXMvU2hpbnlMb25nQ2FtIikKICAgICAgICAgIHB1dChNZWRpYVN0b3JlLlZpZGVvLk1lZGlhLklTX1BFTkRJTkcsIDEpCiAgICAgICAgfQoKICAgIHZhbCB1cmkgPQogICAgICAgIHJlc29sdmVyLmluc2VydChNZWRpYVN0b3JlLlZpZGVvLk1lZGlhLkVYVEVSTkFMX0NPTlRFTlRfVVJJLCB2YWx1ZXMpCiAgICAgICAgICAgID86IHRocm93IElsbGVnYWxTdGF0ZUV4Y2VwdGlvbigiQ291bGQgbm90IGNyZWF0ZSBNZWRpYVN0b3JlIGVudHJ5IikKCiAgICB0cnkgewogICAgICByZXNvbHZlci5vcGVuT3V0cHV0U3RyZWFtKHVyaSwgInciKT8udXNlIHsgb3V0cHV0IC0+CiAgICAgICAgc291cmNlLmlucHV0U3RyZWFtKCkudXNlIHsgaW5wdXQgLT4gaW5wdXQuY29weVRvKG91dHB1dCkgfQogICAgICB9ID86IHRocm93IElsbGVnYWxTdGF0ZUV4Y2VwdGlvbigiQ291bGQgbm90IG9wZW4gTWVkaWFTdG9yZSBvdXRwdXQgc3RyZWFtIikKCiAgICAgIHZhbHVlcy5jbGVhcigpCiAgICAgIHZhbHVlcy5wdXQoTWVkaWFTdG9yZS5WaWRlby5NZWRpYS5JU19QRU5ESU5HLCAwKQogICAgICByZXNvbHZlci51cGRhdGUodXJpLCB2YWx1ZXMsIG51bGwsIG51bGwpCiAgICAgIExvZy5pKFRBRywgIlNhdmVkIHBlcm1hbmVudCByZWNvcmRpbmcgdG8gJHVyaSIpCiAgICAgIHJldHVybiB1cmkKICAgIH0gY2F0Y2ggKGU6IEV4Y2VwdGlvbikgewogICAgICByZXNvbHZlci5kZWxldGUodXJpLCBudWxsLCBudWxsKQogICAgICB0aHJvdyBlCiAgICB9CiAgfQoKIiIiCmlmIG1hcmtlciBub3QgaW4gczoKICAgIHJhaXNlIFN5c3RlbUV4aXQoIkNvdWxkIG5vdCBsb2NhdGUgY3JlYXRlVGVtcEZpbGUgaW4gTWV0YSBzYW1wbGUiKQpzID0gcy5yZXBsYWNlKG1hcmtlciwgaGVscGVyICsgbWFya2VyKQpwLndyaXRlX3RleHQocykK' | base64 -d > /tmp/patch_shiny.py
+          python3 /tmp/patch_shiny.py
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -125,5 +51,3 @@ jobs:
           name: ShinyLongCam-v0.2-APK
           path: ShinyLongCam-v0.2.apk
           if-no-files-found: error
-
-
