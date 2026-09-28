@@ -21,6 +21,86 @@ jobs:
           sed -i 's#<string name="app_name">.*</string>#<string name="app_name">Shiny LongCam</string>#' app/src/main/res/values/strings.xml
           sed -i 's/private const val WAKELOCK_TIMEOUT_MS = 60L \* 60L \* 1000L/private const val WAKELOCK_TIMEOUT_MS = 6L * 60L * 60L * 1000L/' app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/stream/StreamingService.kt
 
+      - name: Make recordings persistent
+        working-directory: appsrc
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/stream/VideoRecorder.kt")
+          s = p.read_text()
+          s = s.replace(
+              "import android.content.Context\n",
+              "import android.content.ContentValues\nimport android.content.Context\nimport android.provider.MediaStore\n",
+          )
+
+          old = '''      if (hadVideo && file != null && file.length() > 0L) {
+        try {
+          val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+          RecordingResult.Completed(uri)
+        } catch (e: Exception) {
+          Log.e(TAG, "Failed to expose recording uri: ${e.message}", e)
+          file.delete()
+          RecordingResult.Failed
+        }
+      } else {'''
+
+          new = '''      if (hadVideo && file != null && file.length() > 0L) {
+        try {
+          savePermanentCopy(file)
+          val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+          RecordingResult.Completed(uri)
+        } catch (e: Exception) {
+          Log.e(TAG, "Failed to finalize recording: ${e.message}", e)
+          file.delete()
+          RecordingResult.Failed
+        }
+      } else {'''
+
+          if old not in s:
+              raise SystemExit("Could not locate stopRecording block in Meta sample")
+          s = s.replace(old, new)
+
+          marker = "  private fun createTempFile(): File {"
+          helper = '''  private fun savePermanentCopy(source: File): Uri {
+    val resolver = context.contentResolver
+    val values =
+        ContentValues().apply {
+          put(
+              MediaStore.Video.Media.DISPLAY_NAME,
+              "ShinyLongCam_${java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.ROOT).format(java.util.Date())}.mp4",
+          )
+          put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+          put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/ShinyLongCam")
+          put(MediaStore.Video.Media.IS_PENDING, 1)
+        }
+
+    val uri =
+        resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("Could not create MediaStore entry")
+
+    try {
+      resolver.openOutputStream(uri, "w")?.use { output ->
+        source.inputStream().use { input -> input.copyTo(output) }
+      } ?: throw IllegalStateException("Could not open MediaStore output stream")
+
+      values.clear()
+      values.put(MediaStore.Video.Media.IS_PENDING, 0)
+      resolver.update(uri, values, null, null)
+      Log.i(TAG, "Saved permanent recording to $uri")
+      return uri
+    } catch (e: Exception) {
+      resolver.delete(uri, null, null)
+      throw e
+    }
+  }
+
+'''
+          if marker not in s:
+              raise SystemExit("Could not locate createTempFile in Meta sample")
+          s = s.replace(marker, helper + marker)
+          p.write_text(s)
+          PY
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -37,11 +117,13 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Rename APK
-        run: cp appsrc/app/build/outputs/apk/debug/app-debug.apk ShinyLongCam.apk
+        run: cp appsrc/app/build/outputs/apk/debug/app-debug.apk ShinyLongCam-v0.2.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ShinyLongCam-APK
-          path: ShinyLongCam.apk
+          name: ShinyLongCam-v0.2-APK
+          path: ShinyLongCam-v0.2.apk
           if-no-files-found: error
+
+
